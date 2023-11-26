@@ -21,43 +21,48 @@ const (
 )
 
 type Chat struct {
+	Interactive  bool
 	Model        string
 	SystemPrompt string
+	PromptFile   string
 	History      []api.Message
 
 	Display io.Writer
 
-	client      *api.Client
-	readline    *readline.Instance
-	interactive bool
+	client   *api.Client
+	readline *readline.Instance
 }
 
 func New(client *api.Client) (*Chat, error) {
 	var rl *readline.Instance
 	interactive := isatty.IsTerminal(os.Stdin.Fd())
-	if interactive {
-		r, err := readline.New(Esc(90) + "you> " + Esc())
-		if err != nil {
-			return nil, err
-		}
-		rl = r
-	}
 	return &Chat{
 		client:       client,
 		readline:     rl,
-		interactive:  interactive,
 		Display:      os.Stdout,
 		SystemPrompt: defaultSystemPrompt,
 		Model:        defaultModel,
+		Interactive:  interactive,
 	}, nil
 }
 
-func (c *Chat) Interactive() bool {
-	return c.interactive
-}
-
 func (c *Chat) GetPrompt() (string, error) {
-	if c.interactive {
+	if c.PromptFile != "" && len(c.History) == 0 {
+		b, err := os.ReadFile(c.PromptFile)
+		return string(b), err
+	} else if c.PromptFile != "" && !c.Interactive {
+		return "", io.EOF
+	}
+
+	if c.Interactive && c.readline == nil {
+		r, err := readline.New(Esc(90) + "you> " + Esc())
+		if err != nil {
+			return "", err
+		}
+		c.readline = r
+	}
+
+	if c.readline != nil {
 		return c.readline.Readline()
 	}
 
@@ -161,7 +166,7 @@ func (c *Chat) Run() error {
 			return err
 		}
 		_ = reply.Close()
-		if !c.Interactive() {
+		if !c.Interactive {
 			break
 		}
 	}

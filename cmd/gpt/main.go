@@ -17,12 +17,15 @@ var (
 	model      = flag.String("model", "gpt-4-1106-preview", "`gpt-*` model to use")
 	listModels = flag.Bool("models", false, "List available models and exit.")
 
+	promptFile  = flag.String("prompt_file", "", "Load prompt from a file at this path. If unset, read from stdin.")
+	interactive = flag.Bool("interactive", false, "Start an interactive session after loading prompt_file. stdin must be a terminal.")
+
 	autoMode = flag.Bool("auto", false, "Function as a fully automated assistant, with access to tools.")
 )
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "%s", err)
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		os.Exit(1)
 	}
 }
@@ -46,6 +49,10 @@ func run() error {
 	c.Model = *model
 	if *autoMode {
 		return auto.Run(c)
+	}
+	c.PromptFile = *promptFile
+	if c.PromptFile != "" {
+		c.Interactive = *interactive
 	}
 	if err := c.Run(); err != nil {
 		return err
