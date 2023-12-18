@@ -162,10 +162,13 @@ func (c *Chat) Run() error {
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(c.Display, reply); err != nil {
+		if err := func() error {
+			defer reply.Close()
+			_, err := io.Copy(c.Display, reply)
+			return err
+		}(); err != nil {
 			return err
 		}
-		_ = reply.Close()
 		if !c.Interactive {
 			break
 		}
