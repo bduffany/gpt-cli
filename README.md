@@ -1,6 +1,6 @@
 # gpt-cli
 
-Fast, simple, powerful GPT CLI client written in Go.
+Fast, simple, and powerful GPT CLI client written in Go.
 
 - Uses the streaming API for realtime output.
 - Keeps chat context throughout the session.
@@ -8,13 +8,14 @@ Fast, simple, powerful GPT CLI client written in Go.
 
 ## Install
 
-```
+```shell
 go install github.com/bduffany/gpt-cli/cmd/gpt@latest
 ```
 
 ## Usage
 
-Configure API key:
+Generate an [OpenAI API key](https://platform.openai.com/api-keys)
+then export it as an environment variable using the following commands:
 
 ```shell
 echo >> ~/.bashrc 'export OPENAI_API_KEY=YOUR_API_KEY'
