@@ -2,6 +2,7 @@ package auto
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -62,14 +63,14 @@ func (e *FixableError) Error() string {
 	return fmt.Sprintf("%s\n# GPT: %s", e.Err, e.Hint)
 }
 
-func Run(c *chat.Chat) error {
+func Run(ctx context.Context, c *chat.Chat) error {
 	c.SystemPrompt = systemPrompt()
 	input := ""
 	log.Debugf("Beginning session.")
 	for {
 		err := (func() error {
 			h := &ReplyHandler{chat: c}
-			r, err := c.Send(input)
+			r, err := c.Send(ctx, input)
 			if err != nil {
 				return err
 			}

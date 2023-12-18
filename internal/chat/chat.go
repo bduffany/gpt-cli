@@ -3,12 +3,16 @@ package chat
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/bduffany/gpt-cli/internal/api"
 	"github.com/chzyer/readline"
@@ -88,7 +92,7 @@ func (c *Chat) Confirmf(format string, args ...any) (bool, string, error) {
 	return false, res, nil
 }
 
-func (c *Chat) Send(prompt string) (io.ReadCloser, error) {
+func (c *Chat) Send(ctx context.Context, prompt string) (io.ReadCloser, error) {
 	c.History = append(c.History, api.Message{Role: "user", Content: prompt})
 	messages := []api.Message{{Role: "system", Content: c.SystemPrompt}}
 	messages = append(messages, c.History...)
@@ -101,7 +105,7 @@ func (c *Chat) Send(prompt string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := c.client.Request("POST", "/v1/chat/completions", bytes.NewReader(body))
+	rsp, err := c.client.Request(ctx, "POST", "/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -140,6 +144,9 @@ func (c *Chat) Send(prompt string) (io.ReadCloser, error) {
 				return err
 			}
 		}
+		if scanner.Err() != nil {
+			return scanner.Err()
+		}
 		c.History = append(c.History, api.Message{
 			Role:    "assistant",
 			Content: reply.String(),
@@ -149,29 +156,50 @@ func (c *Chat) Send(prompt string) (io.ReadCloser, error) {
 	return pr, nil
 }
 
-func (c *Chat) Run() error {
+// Run starts the prompting loop for the chat, reading from the prompt source
+// until inputs are exhausted.
+func (c *Chat) Run(ctx context.Context) error {
 	for {
-		prompt, err := c.GetPrompt()
-		if err != nil {
+		if err := c.readAndExecutePrompt(ctx); err != nil {
 			if err == io.EOF || err == readline.ErrInterrupt {
 				return nil
 			}
 			return err
 		}
-		reply, err := c.Send(prompt)
-		if err != nil {
-			return err
-		}
-		if err := func() error {
-			defer reply.Close()
-			_, err := io.Copy(c.Display, reply)
-			return err
-		}(); err != nil {
-			return err
-		}
 		if !c.Interactive {
 			break
 		}
+	}
+	return nil
+}
+
+func (c *Chat) readAndExecutePrompt(ctx context.Context) (err error) {
+	prompt, err := c.GetPrompt()
+	if err != nil {
+		return err
+	}
+	// When pressing Ctrl+C during a reply, stop the current request but don't
+	// return an error during program execution. This allows long replies to be
+	// interrupted without terminating the session completely.
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT)
+	defer stop()
+	defer func() {
+		if errors.Is(err, context.Canceled) {
+			// Context was canceled due to Ctrl+C; treat this as a non-error.
+			err = nil
+			// Print a blank line since otherwise the readline lib overwrites any
+			// partial output on the last line.
+			io.WriteString(c.Display, "\n")
+		}
+	}()
+
+	reply, err := c.Send(ctx, prompt)
+	if err != nil {
+		return err
+	}
+	defer reply.Close()
+	if _, err := io.Copy(c.Display, reply); err != nil {
+		return err
 	}
 	return nil
 }

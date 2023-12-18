@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,8 +12,8 @@ type Client struct {
 	Token string
 }
 
-func (c *Client) GetJSON(endpoint string, obj any) error {
-	rsp, err := c.Request("GET", endpoint, nil)
+func (c *Client) GetJSON(ctx context.Context, endpoint string, obj any) error {
+	rsp, err := c.Request(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return err
 	}
@@ -27,8 +28,8 @@ func (c *Client) GetJSON(endpoint string, obj any) error {
 	return nil
 }
 
-func (c *Client) Request(method, path string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequest(method, "https://api.openai.com"+path, body)
+func (c *Client) Request(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, "https://api.openai.com"+path, body)
 	if err != nil {
 		return nil, err
 	}

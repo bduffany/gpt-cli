@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -33,13 +34,15 @@ func main() {
 func run() error {
 	flag.Parse()
 
+	ctx := context.Background()
+
 	token := os.Getenv("OPENAI_API_KEY")
 	if token == "" {
 		return fmt.Errorf("missing OPENAI_API_KEY env var")
 	}
 	client := &api.Client{Token: token}
 	if *listModels {
-		return printAvailableModels(client)
+		return printAvailableModels(ctx, client)
 	}
 
 	c, err := chat.New(client)
@@ -48,21 +51,21 @@ func run() error {
 	}
 	c.Model = *model
 	if *autoMode {
-		return auto.Run(c)
+		return auto.Run(ctx, c)
 	}
 	c.PromptFile = *promptFile
 	if c.PromptFile != "" {
 		c.Interactive = *interactive
 	}
-	if err := c.Run(); err != nil {
+	if err := c.Run(ctx); err != nil {
 		return err
 	}
 	return nil
 }
 
-func printAvailableModels(c *api.Client) error {
+func printAvailableModels(ctx context.Context, c *api.Client) error {
 	rsp := &api.GenericObject{}
-	if err := c.GetJSON("/v1/models", rsp); err != nil {
+	if err := c.GetJSON(ctx, "/v1/models", rsp); err != nil {
 		return err
 	}
 	for _, obj := range rsp.Data {
