@@ -12,6 +12,7 @@ import (
 
 	_ "embed"
 
+	"github.com/bduffany/gpt-cli/internal/api"
 	"github.com/bduffany/gpt-cli/internal/chat"
 	"github.com/bduffany/gpt-cli/internal/log"
 	"github.com/chzyer/readline"
@@ -64,7 +65,10 @@ func (e *FixableError) Error() string {
 }
 
 func Run(ctx context.Context, c *chat.Chat) error {
-	c.SystemPrompt = systemPrompt()
+	c.Messages = []api.Message{{
+		Role:    "system",
+		Content: systemPrompt(),
+	}}
 	input := ""
 	log.Debugf("Beginning session.")
 	for {
@@ -263,10 +267,6 @@ type Command struct {
 type Result struct {
 	Val string
 	Err error
-}
-
-func GetPrompt() (string, error) {
-	return "", nil
 }
 
 func runPrompt(cmd *Command) (string, error) {

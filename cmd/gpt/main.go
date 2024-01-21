@@ -18,8 +18,9 @@ var (
 	model      = flag.String("model", "gpt-4-1106-preview", "`gpt-*` model to use")
 	listModels = flag.Bool("models", false, "List available models and exit.")
 
-	promptFile  = flag.String("prompt_file", "", "Load prompt from a file at this path. If unset, read from stdin.")
-	interactive = flag.Bool("interactive", false, "Start an interactive session after loading prompt_file. stdin must be a terminal.")
+	systemPrompt = flag.String("system", "You are a helpful assistant.", "System prompt.")
+	promptFile   = flag.String("prompt_file", "", "Load prompt from a file at this path. If unset, read from stdin.")
+	interactive  = flag.Bool("interactive", false, "Start an interactive session even after loading prompt_file or reading the prompt from args. stdin must be a terminal.")
 
 	autoMode = flag.Bool("auto", false, "Function as a fully automated assistant, with access to tools.")
 )
@@ -45,7 +46,15 @@ func run() error {
 		return printAvailableModels(ctx, client)
 	}
 
-	c, err := chat.New(client)
+	// TODO: allow loading messages from a previous session
+	var messages []api.Message
+	if *systemPrompt != "" {
+		messages = append(messages, api.Message{
+			Role:    "system",
+			Content: *systemPrompt,
+		})
+	}
+	c, err := chat.New(client, messages)
 	if err != nil {
 		return err
 	}
@@ -53,8 +62,18 @@ func run() error {
 	if *autoMode {
 		return auto.Run(ctx, c)
 	}
-	c.PromptFile = *promptFile
-	if c.PromptFile != "" {
+
+	promptFromArgs := strings.Join(flag.Args(), " ")
+	if *promptFile != "" {
+		f, err := os.Open(*promptFile)
+		if err != nil {
+			return fmt.Errorf("open %s: %w", *promptFile, err)
+		}
+		defer f.Close()
+		c.PromptReader = f
+		c.Interactive = *interactive
+	} else if promptFromArgs != "" {
+		c.PromptReader = strings.NewReader(promptFromArgs)
 		c.Interactive = *interactive
 	}
 	if err := c.Run(ctx); err != nil {

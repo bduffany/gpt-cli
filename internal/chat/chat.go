@@ -20,42 +20,51 @@ import (
 )
 
 const (
-	defaultModel        = "gpt-4"
-	defaultSystemPrompt = "You are a helpful assistant."
+	defaultModel = "gpt-4"
 )
 
 type Chat struct {
-	Interactive  bool
 	Model        string
-	SystemPrompt string
-	PromptFile   string
-	History      []api.Message
+	PromptReader io.Reader
+	Interactive  bool
+	Messages     []api.Message
 
 	Display io.Writer
 
 	client   *api.Client
 	readline *readline.Instance
+	eof      bool
 }
 
-func New(client *api.Client) (*Chat, error) {
+func New(client *api.Client, messages []api.Message) (*Chat, error) {
 	var rl *readline.Instance
 	interactive := isatty.IsTerminal(os.Stdin.Fd())
+	var pr io.Reader
+	if !interactive {
+		pr = os.Stdin
+	}
 	return &Chat{
 		client:       client,
 		readline:     rl,
 		Display:      os.Stdout,
-		SystemPrompt: defaultSystemPrompt,
+		Messages:     append([]api.Message{}, messages...),
 		Model:        defaultModel,
 		Interactive:  interactive,
+		PromptReader: pr,
 	}, nil
 }
 
 func (c *Chat) GetPrompt() (string, error) {
-	if c.PromptFile != "" && len(c.History) == 0 {
-		b, err := os.ReadFile(c.PromptFile)
-		return string(b), err
-	} else if c.PromptFile != "" && !c.Interactive {
+	if c.eof {
 		return "", io.EOF
+	}
+
+	if c.PromptReader != nil {
+		b, err := io.ReadAll(c.PromptReader)
+		if !c.Interactive {
+			c.eof = true
+		}
+		return string(b), err
 	}
 
 	if c.Interactive && c.readline == nil {
@@ -93,13 +102,11 @@ func (c *Chat) Confirmf(format string, args ...any) (bool, string, error) {
 }
 
 func (c *Chat) Send(ctx context.Context, prompt string) (io.ReadCloser, error) {
-	c.History = append(c.History, api.Message{Role: "user", Content: prompt})
-	messages := []api.Message{{Role: "system", Content: c.SystemPrompt}}
-	messages = append(messages, c.History...)
+	c.Messages = append(c.Messages, api.Message{Role: "user", Content: prompt})
 	payload := map[string]any{
 		"model":    c.Model,
 		"stream":   true,
-		"messages": messages,
+		"messages": c.Messages,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -147,7 +154,7 @@ func (c *Chat) Send(ctx context.Context, prompt string) (io.ReadCloser, error) {
 		if scanner.Err() != nil {
 			return scanner.Err()
 		}
-		c.History = append(c.History, api.Message{
+		c.Messages = append(c.Messages, api.Message{
 			Role:    "assistant",
 			Content: reply.String(),
 		})
