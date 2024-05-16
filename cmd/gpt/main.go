@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	model      = flag.String("model", "gpt-4-1106-preview", "`gpt-*` model to use")
+	model      = flag.String("model", "gpt-4o", "`gpt-*` model to use")
 	listModels = flag.Bool("models", false, "List available models and exit.")
 
 	systemPrompt = flag.String("system", "You are a helpful assistant.", "System prompt.")
