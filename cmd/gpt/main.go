@@ -4,18 +4,20 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/bduffany/gpt-cli/internal/api"
 	"github.com/bduffany/gpt-cli/internal/auto"
 	"github.com/bduffany/gpt-cli/internal/chat"
+	"gopkg.in/yaml.v3"
 
 	_ "embed"
 )
 
 var (
-	model      = flag.String("model", "gpt-4o-2024-08-06", "`gpt-*` model to use")
+	model      = flag.String("model", "gpt-4o", "`gpt-*` model to use.")
 	listModels = flag.Bool("models", false, "List available models and exit.")
 
 	systemPrompt = flag.String("system", "You are a helpful assistant.", "System prompt.")
@@ -37,14 +39,17 @@ func run() error {
 
 	ctx := context.Background()
 
+	if *listModels {
+		// Listing models fetches the OpenAPI spec from GitHub - no need for API
+		// key.
+		return printAvailableModels(ctx)
+	}
+
 	token := os.Getenv("OPENAI_API_KEY")
 	if token == "" {
 		return fmt.Errorf("missing OPENAI_API_KEY env var")
 	}
 	client := &api.Client{Token: token}
-	if *listModels {
-		return printAvailableModels(ctx, client)
-	}
 
 	// TODO: allow loading messages from a previous session
 	var messages []api.Message
@@ -82,15 +87,40 @@ func run() error {
 	return nil
 }
 
-func printAvailableModels(ctx context.Context, c *api.Client) error {
-	rsp := &api.GenericObject{}
-	if err := c.GetJSON(ctx, "/v1/models", rsp); err != nil {
-		return err
+type OpenAPISpec struct {
+	Components struct {
+		Schemas struct {
+			AssistantSupportedModels struct {
+				Enum []string `yaml:"enum"`
+			} `yaml:"AssistantSupportedModels"`
+		} `yaml:"schemas"`
+	} `yaml:"components"`
+}
+
+func printAvailableModels(ctx context.Context) error {
+	// Note: /v1/models API doesn't filter to chat-only models,
+	// so we use the OpenAPI spec.
+
+	// Hopefully this URL remains stable :P
+	const specURL = "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/master/openapi.yaml"
+
+	// Fetch the spec
+	resp, err := http.Get(specURL)
+	if err != nil {
+		return fmt.Errorf("fetch %s: %w", specURL, err)
 	}
-	for _, obj := range rsp.Data {
-		if strings.HasPrefix(obj.ID, "gpt-") {
-			fmt.Println(obj.ID)
-		}
+	defer resp.Body.Close()
+
+	// Parse response as YAML
+	var spec OpenAPISpec
+	if err := yaml.NewDecoder(resp.Body).Decode(&spec); err != nil {
+		return fmt.Errorf("decode %s: %w", specURL, err)
 	}
+
+	models := spec.Components.Schemas.AssistantSupportedModels.Enum
+	for _, model := range models {
+		fmt.Println(model)
+	}
+
 	return nil
 }
