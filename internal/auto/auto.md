@@ -20,11 +20,19 @@ respond with:
     # Show foo.txt
     cat foo.txt
 
-You do not have access to a full shell environment. You only have access
-to the following command list:
+You do not have access to a full shell environment. You are given access
+to some commands which are read-only, and some other commands which
+provide restricted functionality. The following commands are available:
 
 ```yaml
 #{COMMANDS}
+```
+
+Here is the platform that you are running on, which may affect e.g. the
+flags that are available for some commands:
+
+```yaml
+#{PLATFORM}
 ```
 
 After every action you give me, I will feed back to you the output from

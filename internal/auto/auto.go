@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	_ "embed"
@@ -29,14 +30,14 @@ var availableCommands = []CommandSpec{
 	{
 		Cmd:  "cat",
 		Args: "FILES ...",
-		Desc: "Returns the concatenated contents of one or more files.",
+		Desc: "Unrestricted 'cat' command.",
 		Run:  safeShellCommand("cat"),
 	},
 	{
 		Cmd:  "ls",
 		Args: "PATH ...",
-		Desc: "Runs ls -la on the given paths and returns the result.",
-		Run:  safeShellCommand("ls", "-la"),
+		Desc: "Unrestricted 'ls' command.",
+		Run:  safeShellCommand("ls"),
 	},
 	{
 		Cmd:  "write",
@@ -45,9 +46,22 @@ var availableCommands = []CommandSpec{
 		Run:  runWrite,
 	},
 	{
+		Cmd:  "find",
+		Args: "...",
+		Desc: "Unrestricted 'find' command.",
+		Run:  safeShellCommand("find"),
+	},
+	// TODO: conditionally add this only if installed.
+	{
+		Cmd:  "rg",
+		Args: "...",
+		Desc: "Unrestricted 'rg' command (ripgrep).",
+		Run:  safeShellCommand("rg"),
+	},
+	{
 		Cmd:  "curl",
 		Args: "URL",
-		Desc: "Issue an HTTP GET request. You can use this for things like searching google or requesting from https://api.github.com. The first line will contain the response code. Next a blank line. Following that, the HTTP response body.",
+		Desc: "Issue an HTTP request with curl. This is a restricted version of curl that only supports GET requests and only a URL option. You can use this for things like searching google or requesting from https://api.github.com. The first line will contain the response code. Next a blank line. Following that, the HTTP response body.",
 		Run:  runHTTPGet,
 	},
 }
@@ -252,7 +266,17 @@ func systemPrompt() string {
 		specs += "- command: " + c.Cmd + "\n"
 		specs += "  description: " + c.Desc + "\n"
 	}
-	return strings.Replace(promptTemplate, "#{COMMANDS}", specs, 1)
+
+	platform := strings.Join([]string{
+		"os: " + runtime.GOOS,
+		"arch: " + runtime.GOARCH,
+		"$USER: " + os.Getenv("USER"),
+		"$HOME: " + os.Getenv("HOME"),
+	}, "\n")
+
+	prompt := strings.Replace(promptTemplate, "#{COMMANDS}", specs, 1)
+	prompt = strings.Replace(prompt, "#{PLATFORM}", platform, 1)
+	return prompt
 }
 
 type Command struct {
@@ -300,7 +324,25 @@ func runWrite(cmd *Command) (string, error) {
 	}
 	path := cmd.args[0]
 	log.Debugf("Read all input from gpt. Confirming.")
-	ok, reply, err := cmd.Chat.Confirmf("Write the above contents to %q?", path)
+
+	// If the file already exists, show a diff using 'diff -u'.
+	if _, err := os.Stat(path); err == nil {
+		// TODO: colordiff might not be installed.
+		diff := exec.Command("sh", "-c", `diff -u - "$1" | colordiff`, "--", path)
+		var stdout, stderr bytes.Buffer
+		diff.Stdout = &stdout
+		diff.Stderr = &stderr
+		diff.Stdin = bytes.NewReader(b)
+		if err := diff.Run(); err != nil {
+			return "", fmt.Errorf("%s\ndiff failed: %w", stderr.String(), err)
+		}
+		cmd.Chat.Display.Write(stdout.Bytes())
+		if strings.TrimSpace(stdout.String()) == "" {
+			cmd.Chat.Infof("No changes to %q", path)
+			return "", nil
+		}
+	}
+	ok, reply, err := cmd.Chat.Confirmf("Apply the above diff to %q?", path)
 	if err != nil {
 		return "", err
 	}
@@ -336,7 +378,7 @@ func runHTTPGet(cmd *Command) (string, error) {
 	if err != nil {
 		return "", &FixableError{
 			Err:  fmt.Errorf("failed to read response body: %w", err),
-			Hint: "Does this seem like a transient error? Maybe retry it?",
+			Hint: "Does this seem like a transient error? If yes, retry it, otherwise consider a different strategy.",
 		}
 	}
 	return reply + string(b), nil

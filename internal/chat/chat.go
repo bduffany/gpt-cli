@@ -83,6 +83,10 @@ func (c *Chat) GetPrompt() (string, error) {
 	return string(b), err
 }
 
+func (c *Chat) Infof(format string, args ...any) {
+	io.WriteString(c.Display, Esc(92)+fmt.Sprintf(format, args...)+"\n"+Esc())
+}
+
 func (c *Chat) Confirmf(format string, args ...any) (bool, string, error) {
 	io.WriteString(c.Display, Esc(93)+fmt.Sprintf(format, args...)+" (yes / no)\n"+Esc())
 	res, err := c.readline.Readline()
