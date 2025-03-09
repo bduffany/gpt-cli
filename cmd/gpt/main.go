@@ -105,9 +105,13 @@ func printAvailableModels(ctx context.Context) error {
 	const specURL = "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/master/openapi.yaml"
 
 	// Fetch the spec
-	resp, err := http.Get(specURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", specURL, nil)
 	if err != nil {
-		return fmt.Errorf("fetch %s: %w", specURL, err)
+		return fmt.Errorf("create GET request for %s: %w", specURL, err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("GET %s: %w", specURL, err)
 	}
 	defer resp.Body.Close()
 
