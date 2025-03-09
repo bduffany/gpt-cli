@@ -14,6 +14,8 @@ go install github.com/bduffany/gpt-cli/cmd/gpt@latest
 
 ## Usage
 
+## Authentication
+
 Generate an [OpenAI API key](https://platform.openai.com/api-keys)
 then export it as an environment variable using the following commands:
 
@@ -22,11 +24,13 @@ echo >> ~/.bashrc 'export OPENAI_API_KEY=YOUR_API_KEY'
 exec bash
 ```
 
+## Chat completions
+
 Running just `gpt` will give you an interactive session:
 
 ```shell
 $ gpt
-you> You're a sorter. I give you a list, you reply only with the sorted list.
+you> You're a sorter. Reply only with sorted lists.
 Understood, please provide the list you would like sorted.
 you> b, c, a
 a, b, c
@@ -69,4 +73,23 @@ function fisherYatesShuffle(array) {
   return array;
 }
 you>
+```
+
+## Model selection
+
+The default model is `gpt-4o`. List available models with `-models`:
+
+```shell
+$ gpt -models
+o3-mini
+o1
+gpt-4o
+...
+```
+
+Specify a different model with `-model`. A handy way to use this is
+with a shell alias:
+
+```shell
+alias o1='gpt -model=o1'
 ```
