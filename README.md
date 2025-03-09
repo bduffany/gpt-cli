@@ -6,13 +6,11 @@ Fast, simple, and powerful GPT CLI client written in Go.
 - Keeps chat context throughout the session.
 - Supports reading input from stdin, for integration in command pipelines.
 
-## Install
+## Installation
 
 ```shell
 go install github.com/bduffany/gpt-cli/cmd/gpt@latest
 ```
-
-## Usage
 
 ## Authentication
 
