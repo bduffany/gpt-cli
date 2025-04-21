@@ -8,6 +8,10 @@ import (
 	"net/http"
 )
 
+const (
+	DefaultModel = "gpt-4o"
+)
+
 type Client struct {
 	Token string
 }

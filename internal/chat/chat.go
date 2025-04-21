@@ -19,10 +19,6 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
-const (
-	defaultModel = "gpt-4"
-)
-
 type Chat struct {
 	Model        string
 	PromptReader io.Reader
@@ -48,7 +44,7 @@ func New(client *api.Client, messages []api.Message) (*Chat, error) {
 		readline:     rl,
 		Display:      os.Stdout,
 		Messages:     append([]api.Message{}, messages...),
-		Model:        defaultModel,
+		Model:        api.DefaultModel,
 		Interactive:  interactive,
 		PromptReader: pr,
 	}, nil
