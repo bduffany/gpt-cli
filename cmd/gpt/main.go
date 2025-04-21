@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/bduffany/gpt-cli/internal/api"
@@ -17,8 +18,10 @@ import (
 )
 
 var (
-	model      = flag.String("model", api.DefaultModel, "`gpt-*` model to use.")
-	listModels = flag.Bool("models", false, "List available models and exit.")
+	listModels    = flag.Bool("models", false, "List available models and exit.")
+	listAllModels = flag.Bool("all_models", false, "List ALL models and exit, even ones that aren't specified in AssistantSupportedModels.")
+
+	model = flag.String("model", api.DefaultModel, "`gpt-*` model to use.")
 
 	systemPrompt = flag.String("system", "You are a helpful assistant.", "System prompt.")
 	promptFile   = flag.String("prompt_file", "", "Load prompt from a file at this path. If unset, read from stdin.")
@@ -40,9 +43,7 @@ func run() error {
 	ctx := context.Background()
 
 	if *listModels {
-		// Listing models fetches the OpenAPI spec from GitHub - no need for API
-		// key.
-		return printAvailableModels(ctx)
+		return printAssistantSupportedModels(ctx)
 	}
 
 	token := os.Getenv("OPENAI_API_KEY")
@@ -50,6 +51,10 @@ func run() error {
 		return fmt.Errorf("missing OPENAI_API_KEY env var")
 	}
 	client := &api.Client{Token: token}
+
+	if *listAllModels {
+		return printAvailableModels(ctx, client)
+	}
 
 	// TODO: allow loading messages from a previous session
 	var messages []api.Message
@@ -87,17 +92,24 @@ func run() error {
 	return nil
 }
 
-type OpenAPISpec struct {
-	Components struct {
-		Schemas struct {
-			AssistantSupportedModels struct {
-				Enum []string `yaml:"enum"`
-			} `yaml:"AssistantSupportedModels"`
-		} `yaml:"schemas"`
-	} `yaml:"components"`
+func printAvailableModels(ctx context.Context, client *api.Client) error {
+	models := &api.ListModelsResponse{}
+	if err := client.GetJSON(ctx, "/v1/models", models); err != nil {
+		return fmt.Errorf("list models: %w", err)
+	}
+	var ids []string
+	for _, m := range models.Data {
+		ids = append(ids, m.ID)
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		fmt.Println(id)
+	}
+	return nil
 }
 
-func printAvailableModels(ctx context.Context) error {
+func printAssistantSupportedModels(ctx context.Context) error {
+
 	// Note: /v1/models API doesn't filter to chat-only models,
 	// so we use the OpenAPI spec.
 
@@ -116,7 +128,7 @@ func printAvailableModels(ctx context.Context) error {
 	defer resp.Body.Close()
 
 	// Parse response as YAML
-	var spec OpenAPISpec
+	var spec api.OpenAPISpec
 	if err := yaml.NewDecoder(resp.Body).Decode(&spec); err != nil {
 		return fmt.Errorf("decode %s: %w", specURL, err)
 	}

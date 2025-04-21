@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	DefaultModel = "gpt-4o"
+	DefaultModel = "gpt-4.1"
 )
 
 type Client struct {
@@ -39,6 +39,7 @@ func (c *Client) Request(ctx context.Context, method, path string, body io.Reade
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("OpenAI-Beta", "assistants=v2")
 	rsp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -61,6 +62,38 @@ func (c *Client) Request(ctx context.Context, method, path string, body io.Reade
 	}
 
 	return rsp, nil
+}
+
+// OpenAPI spec
+
+type OpenAPISpec struct {
+	Components struct {
+		Schemas struct {
+			AssistantSupportedModels struct {
+				Enum []string `yaml:"enum"`
+			} `yaml:"AssistantSupportedModels"`
+		} `yaml:"schemas"`
+	} `yaml:"components"`
+}
+
+// Models API definitions
+
+type ListModelsResponse struct {
+	Data []Model `json:"data"`
+}
+
+type Model struct {
+	ID string `json:"id"`
+}
+
+// Assistants API definitions
+
+type ListAssistantsResponse struct {
+	Data []AssistantObject `json:"data"`
+}
+
+type AssistantObject struct {
+	ID string `json:"id"`
 }
 
 // Completions API definitions
