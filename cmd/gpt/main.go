@@ -9,9 +9,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/bduffany/gpt-cli/internal/api"
 	"github.com/bduffany/gpt-cli/internal/auto"
 	"github.com/bduffany/gpt-cli/internal/chat"
+	"github.com/bduffany/gpt-cli/internal/google"
+	"github.com/bduffany/gpt-cli/internal/llm"
+	"github.com/bduffany/gpt-cli/internal/openai"
 	"gopkg.in/yaml.v3"
 
 	_ "embed"
@@ -21,13 +23,13 @@ var (
 	listModels    = flag.Bool("models", false, "List available models and exit.")
 	listAllModels = flag.Bool("all_models", false, "List ALL models and exit, even ones that aren't specified in AssistantSupportedModels.")
 
-	model = flag.String("model", api.DefaultModel, "`gpt-*` model to use.")
+	model = flag.String("model", openai.DefaultModel, "`gpt-* or gemini-*` model to use.")
 
 	systemPrompt = flag.String("system", "You are a helpful assistant.", "System prompt.")
 	promptFile   = flag.String("prompt_file", "", "Load prompt from a file at this path. If unset, read from stdin.")
 	interactive  = flag.Bool("interactive", false, "Start an interactive session even after loading prompt_file or reading the prompt from args. stdin must be a terminal.")
 
-	autoMode = flag.Bool("auto", false, "Function as a fully automated assistant, with access to tools.")
+	agentMode = flag.Bool("agent", false, "Function as a fully automated agent, with access to tools.")
 )
 
 func main() {
@@ -42,26 +44,41 @@ func run() error {
 
 	ctx := context.Background()
 
-	if *listModels {
-		return printAssistantSupportedModels(ctx)
-	}
+	var client llm.CompletionClient
 
-	token := os.Getenv("OPENAI_API_KEY")
-	if token == "" {
-		return fmt.Errorf("missing OPENAI_API_KEY env var")
-	}
-	client := &api.Client{Token: token}
-
-	if *listAllModels {
-		return printAvailableModels(ctx, client)
+	if isGeminiModel(*model) {
+		gem, err := google.NewGeminiClient(*model)
+		if err != nil {
+			return fmt.Errorf("create Gemini client: %w", err)
+		}
+		client = gem
+	} else {
+		// Assume OpenAI for now.
+		token := os.Getenv("OPENAI_API_KEY")
+		if token == "" {
+			return fmt.Errorf("missing OPENAI_API_KEY env var")
+		}
+		if *listModels {
+			return printAssistantSupportedModels(ctx)
+		}
+		openAIClient := &openai.Client{
+			ModelName: *model,
+			Token:     token,
+		}
+		if *listAllModels {
+			return printAvailableModels(ctx, openAIClient)
+		}
+		client = openAIClient
 	}
 
 	// TODO: allow loading messages from a previous session
-	var messages []api.Message
+	var messages []llm.Message
 	if *systemPrompt != "" {
-		messages = append(messages, api.Message{
-			Role:    "system",
-			Content: *systemPrompt,
+		messages = append(messages, llm.Message{
+			Metadata: llm.MessageMetadata{
+				Role: llm.RoleSystem,
+			},
+			Payload: *systemPrompt,
 		})
 	}
 	c, err := chat.New(client, messages)
@@ -69,7 +86,7 @@ func run() error {
 		return err
 	}
 	c.Model = *model
-	if *autoMode {
+	if *agentMode {
 		return auto.Run(ctx, c)
 	}
 
@@ -92,8 +109,12 @@ func run() error {
 	return nil
 }
 
-func printAvailableModels(ctx context.Context, client *api.Client) error {
-	models := &api.ListModelsResponse{}
+func isGeminiModel(model string) bool {
+	return strings.HasPrefix(model, "gemini-")
+}
+
+func printAvailableModels(ctx context.Context, client *openai.Client) error {
+	models := &openai.ListModelsResponse{}
 	if err := client.GetJSON(ctx, "/v1/models", models); err != nil {
 		return fmt.Errorf("list models: %w", err)
 	}
@@ -128,7 +149,7 @@ func printAssistantSupportedModels(ctx context.Context) error {
 	defer resp.Body.Close()
 
 	// Parse response as YAML
-	var spec api.OpenAPISpec
+	var spec openai.OpenAPISpec
 	if err := yaml.NewDecoder(resp.Body).Decode(&spec); err != nil {
 		return fmt.Errorf("decode %s: %w", specURL, err)
 	}

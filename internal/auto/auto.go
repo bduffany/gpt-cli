@@ -13,8 +13,8 @@ import (
 
 	_ "embed"
 
-	"github.com/bduffany/gpt-cli/internal/api"
 	"github.com/bduffany/gpt-cli/internal/chat"
+	"github.com/bduffany/gpt-cli/internal/llm"
 	"github.com/bduffany/gpt-cli/internal/log"
 	"github.com/chzyer/readline"
 )
@@ -79,9 +79,11 @@ func (e *FixableError) Error() string {
 }
 
 func Run(ctx context.Context, c *chat.Chat) error {
-	c.Messages = []api.Message{{
-		Role:    "system",
-		Content: systemPrompt(),
+	c.Messages = []llm.Message{{
+		Metadata: llm.MessageMetadata{
+			Role: llm.RoleSystem,
+		},
+		Payload: systemPrompt(),
 	}}
 	input := ""
 	log.Debugf("Beginning session.")

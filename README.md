@@ -1,8 +1,9 @@
 # gpt-cli
 
-Fast, simple, and powerful GPT CLI client written in Go.
+Fast, simple, and powerful LLM CLI client written in Go.
 
-- Uses the streaming API for realtime output.
+- Supports OpenAI and Google Gemini models.
+- Uses streaming APIs for realtime output.
 - Keeps chat context throughout the session.
 - Supports reading input from stdin, for integration in command pipelines.
 

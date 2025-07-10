@@ -1,20 +1,20 @@
 package chat
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 
-	"github.com/bduffany/gpt-cli/internal/api"
+	"github.com/bduffany/gpt-cli/internal/llm"
+	"github.com/bduffany/gpt-cli/internal/openai"
 	"github.com/chzyer/readline"
 	"github.com/mattn/go-isatty"
 )
@@ -23,16 +23,16 @@ type Chat struct {
 	Model        string
 	PromptReader io.Reader
 	Interactive  bool
-	Messages     []api.Message
+	Messages     []llm.Message
 
 	Display io.Writer
 
-	client   *api.Client
+	client   llm.CompletionClient
 	readline *readline.Instance
 	eof      bool
 }
 
-func New(client *api.Client, messages []api.Message) (*Chat, error) {
+func New(client llm.CompletionClient, messages []llm.Message) (*Chat, error) {
 	var rl *readline.Instance
 	interactive := isatty.IsTerminal(os.Stdin.Fd())
 	var pr io.Reader
@@ -43,8 +43,8 @@ func New(client *api.Client, messages []api.Message) (*Chat, error) {
 		client:       client,
 		readline:     rl,
 		Display:      os.Stdout,
-		Messages:     append([]api.Message{}, messages...),
-		Model:        api.DefaultModel,
+		Messages:     slices.Clone(messages),
+		Model:        openai.DefaultModel,
 		Interactive:  interactive,
 		PromptReader: pr,
 	}, nil
@@ -102,65 +102,17 @@ func (c *Chat) Confirmf(format string, args ...any) (bool, string, error) {
 }
 
 func (c *Chat) Send(ctx context.Context, prompt string) (io.ReadCloser, error) {
-	c.Messages = append(c.Messages, api.Message{Role: "user", Content: prompt})
-	payload := map[string]any{
-		"model":    c.Model,
-		"stream":   true,
-		"messages": c.Messages,
-	}
-	body, err := json.Marshal(payload)
+	c.Messages = append(c.Messages, llm.Message{
+		Metadata: llm.MessageMetadata{
+			Role: llm.RoleUser,
+		},
+		Payload: prompt,
+	})
+	completion, err := c.client.GetCompletion(c.Messages)
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := c.client.Request(ctx, "POST", "/v1/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-
-	pr, pw := io.Pipe()
-	go func() (err error) {
-		defer rsp.Body.Close()
-		defer func() { pw.CloseWithError(err) }()
-
-		reply := &bytes.Buffer{}
-
-		w := io.MultiWriter(pw, reply)
-
-		scanner := bufio.NewScanner(rsp.Body)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			parts := strings.SplitN(line, ": ", 2)
-			if len(parts) < 2 {
-				continue
-			}
-			if parts[0] != "data" {
-				continue
-			}
-			if parts[1] == "[DONE]" {
-				if _, err := io.WriteString(w, "\n"); err != nil {
-					return err
-				}
-				break
-			}
-			data := &api.Data{}
-			if err := json.Unmarshal([]byte(parts[1]), data); err != nil {
-				return fmt.Errorf("failed to parse line %q: %s", line, err)
-			}
-			// TODO: nil checks
-			if _, err := io.WriteString(w, data.Choices[0].Delta.Content); err != nil {
-				return err
-			}
-		}
-		if scanner.Err() != nil {
-			return scanner.Err()
-		}
-		c.Messages = append(c.Messages, api.Message{
-			Role:    "assistant",
-			Content: reply.String(),
-		})
-		return nil
-	}()
-	return pr, nil
+	return completion, nil
 }
 
 // Run starts the prompting loop for the chat, reading from the prompt source
@@ -205,9 +157,24 @@ func (c *Chat) readAndExecutePrompt(ctx context.Context) (err error) {
 		return err
 	}
 	defer reply.Close()
-	if _, err := io.Copy(c.Display, reply); err != nil {
+	var buf bytes.Buffer
+	w := io.MultiWriter(c.Display, &buf)
+	if _, err := io.Copy(w, reply); err != nil {
 		return err
 	}
+	if len(buf.Bytes()) == 0 || buf.Bytes()[len(buf.Bytes())-1] != '\n' {
+		// Ensure a newline so that the next prompt doesn't overwrite it.
+		// TODO: this should probably be the responsibility of GetPrompt
+		if _, err := io.WriteString(c.Display, "\n"); err != nil {
+			return err
+		}
+	}
+	c.Messages = append(c.Messages, llm.Message{
+		Metadata: llm.MessageMetadata{
+			Role: llm.RoleModel,
+		},
+		Payload: buf.String(),
+	})
 	return nil
 }
 
