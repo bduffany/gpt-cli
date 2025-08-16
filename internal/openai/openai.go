@@ -24,7 +24,7 @@ type Client struct {
 
 var _ llm.CompletionClient = (*Client)(nil)
 
-func (c *Client) GetCompletion(messages []llm.Message) (*llm.Completion, error) {
+func (c *Client) GetCompletion(ctx context.Context, messages []llm.Message) (*llm.Completion, error) {
 	payload := map[string]any{
 		"model":    c.ModelName,
 		"stream":   true,
@@ -34,7 +34,7 @@ func (c *Client) GetCompletion(messages []llm.Message) (*llm.Completion, error) 
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := c.Request(context.Background(), "POST", "/v1/chat/completions", bytes.NewReader(body))
+	rsp, err := c.Request(ctx, "POST", "/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

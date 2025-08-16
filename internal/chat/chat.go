@@ -108,7 +108,7 @@ func (c *Chat) Send(ctx context.Context, prompt string) (io.ReadCloser, error) {
 		},
 		Payload: prompt,
 	})
-	completion, err := c.client.GetCompletion(c.Messages)
+	completion, err := c.client.GetCompletion(ctx, c.Messages)
 	if err != nil {
 		return nil, err
 	}

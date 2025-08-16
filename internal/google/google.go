@@ -27,7 +27,7 @@ func NewGeminiClient(model string) (*GeminiClient, error) {
 	}, nil
 }
 
-func (c *GeminiClient) GetCompletion(messages []llm.Message) (*llm.Completion, error) {
+func (c *GeminiClient) GetCompletion(ctx context.Context, messages []llm.Message) (*llm.Completion, error) {
 	var parts []*genai.Content
 	var systemInstruction *genai.Content
 	for _, m := range messages {
@@ -42,7 +42,7 @@ func (c *GeminiClient) GetCompletion(messages []llm.Message) (*llm.Completion, e
 			Parts: []*genai.Part{{Text: m.Payload}},
 		})
 	}
-	stream := c.client.Models.GenerateContentStream(context.TODO(), c.ModelName, parts, &genai.GenerateContentConfig{
+	stream := c.client.Models.GenerateContentStream(ctx, c.ModelName, parts, &genai.GenerateContentConfig{
 		SystemInstruction: systemInstruction,
 		CandidateCount:    1,
 	})

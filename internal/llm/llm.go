@@ -1,6 +1,9 @@
 package llm
 
-import "io"
+import (
+	"context"
+	"io"
+)
 
 // Role is an annotation attached to each message which describes who generated
 // the message.
@@ -28,7 +31,7 @@ type CompletionClient interface {
 	// TODO: accept a context.
 	// TODO: accept an io.Writer here instead, since implementations currently
 	// have to start goroutines in order to return a reader.
-	GetCompletion(messages []Message) (*Completion, error)
+	GetCompletion(ctx context.Context, messages []Message) (*Completion, error)
 }
 
 type Completion struct {
