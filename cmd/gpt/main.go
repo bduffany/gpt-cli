@@ -23,7 +23,9 @@ var (
 	listModels    = flag.Bool("models", false, "List available models and exit.")
 	listAllModels = flag.Bool("all_models", false, "List ALL models and exit, even ones that aren't specified in AssistantSupportedModels.")
 
-	model = flag.String("model", openai.DefaultModel, "`gpt-* or gemini-*` model to use.")
+	model    = flag.String("model", openai.DefaultModel, "`gpt-* or gemini-*` model to use.")
+	gemini   = flag.Bool("g", false, "Use Gemini (takes precedence over -model)")
+	thinking = flag.Bool("t", false, "Use a thinking model (Gemini pro or OpenAI o1).")
 
 	systemPrompt = flag.String("system", "You are a helpful assistant.", "System prompt.")
 	promptFile   = flag.String("prompt_file", "", "Load prompt from a file at this path. If unset, read from stdin.")
@@ -45,6 +47,16 @@ func run() error {
 	ctx := context.Background()
 
 	var client llm.CompletionClient
+
+	if *gemini {
+		if *thinking {
+			*model = "gemini-2.5-pro"
+		} else {
+			*model = "gemini-2.5-flash"
+		}
+	} else if *thinking {
+		*model = "o1"
+	}
 
 	if isGeminiModel(*model) {
 		gem, err := google.NewGeminiClient(*model)
