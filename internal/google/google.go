@@ -9,6 +9,14 @@ import (
 	"google.golang.org/genai"
 )
 
+func GetDefaultModel(thinking bool) string {
+	if thinking {
+		return "gemini-2.5-pro"
+	} else {
+		return "gemini-2.5-flash"
+	}
+}
+
 type GeminiClient struct {
 	ModelName string
 	client    *genai.Client

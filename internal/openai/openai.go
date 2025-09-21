@@ -8,14 +8,36 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/bduffany/gpt-cli/internal/llm"
 )
 
 const (
-	DefaultModel = "gpt-4.1"
+	DefaultModel                 = "gpt-4.1"
+	DefaultVerifiedModel         = "gpt-5"
+	DefaultThinkingModel         = "o1"
+	DefaultVerifiedThinkingModel = "o3"
 )
+
+func GetDefaultModel(thinking bool) string {
+	verifiedEnvVar := strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_IDENTITY_VERIFIED")))
+	verified := verifiedEnvVar == "1" || verifiedEnvVar == "true" || verifiedEnvVar == "yes"
+	if verified {
+		if thinking {
+			return DefaultVerifiedThinkingModel
+		} else {
+			return DefaultVerifiedModel
+		}
+	} else {
+		if thinking {
+			return DefaultThinkingModel
+		} else {
+			return DefaultModel
+		}
+	}
+}
 
 type Client struct {
 	ModelName string

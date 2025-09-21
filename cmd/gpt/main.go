@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/bduffany/gpt-cli/internal/auto"
 	"github.com/bduffany/gpt-cli/internal/chat"
@@ -25,9 +27,9 @@ var (
 
 	model    = flag.String("model", openai.DefaultModel, "`gpt-* or gemini-*` model to use.")
 	gemini   = flag.Bool("g", false, "Use Gemini (takes precedence over -model)")
-	thinking = flag.Bool("t", false, "Use a thinking model (Gemini pro or OpenAI o1).")
+	thinking = flag.Bool("t", false, "Use a thinking model (Gemini pro or OpenAI o1/o3).")
 
-	systemPrompt = flag.String("system", "You are a helpful assistant.", "System prompt.")
+	systemPrompt = flag.String("system", "", "System prompt. Defaults to a prompt containing basic OS and session info.")
 	promptFile   = flag.String("prompt_file", "", "Load prompt from a file at this path. If unset, read from stdin.")
 	interactive  = flag.Bool("interactive", false, "Start an interactive session even after loading prompt_file or reading the prompt from args. stdin must be a terminal.")
 
@@ -48,14 +50,16 @@ func run() error {
 
 	var client llm.CompletionClient
 
-	if *gemini {
-		if *thinking {
-			*model = "gemini-2.5-pro"
+	if *systemPrompt == "" {
+		*systemPrompt = getDefaultSystemPrompt()
+	}
+
+	if *model == "" {
+		if *gemini {
+			*model = google.GetDefaultModel(*thinking)
 		} else {
-			*model = "gemini-2.5-flash"
+			*model = openai.GetDefaultModel(*thinking)
 		}
-	} else if *thinking {
-		*model = "o1"
 	}
 
 	if isGeminiModel(*model) {
@@ -119,6 +123,26 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+func getDefaultSystemPrompt() string {
+	lines := []string{
+		"You are a helpful AI chat assistant being accessed through a command line tool.",
+		"The chat session started at " + time.Now().String() + " local time.",
+		"The user's operating system is " + fmt.Sprintf("%s (%s)", runtime.GOOS, runtime.GOARCH) + ".",
+	}
+	if runtime.GOOS == "linux" {
+		// Read /etc/os-release and look for PRETTY_NAME
+		if data, err := os.ReadFile("/etc/os-release"); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if strings.HasPrefix(line, "PRETTY_NAME=") {
+					lines = append(lines, "The user's Linux distribution is "+strings.Trim(line[len("PRETTY_NAME="):], `"`)+".")
+					break
+				}
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func isGeminiModel(model string) bool {
