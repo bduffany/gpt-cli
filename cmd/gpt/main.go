@@ -25,9 +25,10 @@ var (
 	listModels    = flag.Bool("models", false, "List available models and exit.")
 	listAllModels = flag.Bool("all_models", false, "List ALL models and exit, even ones that aren't specified in AssistantSupportedModels.")
 
-	model    = flag.String("model", openai.DefaultModel, "`gpt-* or gemini-*` model to use.")
+	model    = flag.String("model", "", "`gpt-* or gemini-*` model to use.")
 	gemini   = flag.Bool("g", false, "Use Gemini (takes precedence over -model)")
 	thinking = flag.Bool("t", false, "Use a thinking model (Gemini pro or OpenAI o1/o3).")
+	five     = flag.Bool("5", false, "Shorthand for -model=gpt-5.")
 
 	systemPrompt = flag.String("system", "", "System prompt. Defaults to a prompt containing basic OS and session info.")
 	promptFile   = flag.String("prompt_file", "", "Load prompt from a file at this path. If unset, read from stdin.")
@@ -50,16 +51,19 @@ func run() error {
 
 	var client llm.CompletionClient
 
-	if *systemPrompt == "" {
-		*systemPrompt = getDefaultSystemPrompt()
+	if *five {
+		*model = "gpt-5"
 	}
-
 	if *model == "" {
 		if *gemini {
 			*model = google.GetDefaultModel(*thinking)
 		} else {
 			*model = openai.GetDefaultModel(*thinking)
 		}
+	}
+
+	if *systemPrompt == "" {
+		*systemPrompt = getDefaultSystemPrompt()
 	}
 
 	if isGeminiModel(*model) {
@@ -128,15 +132,16 @@ func run() error {
 func getDefaultSystemPrompt() string {
 	lines := []string{
 		"You are a helpful AI chat assistant being accessed through a command line tool.",
+		"Your underlying AI model name/version is: " + *model,
 		"The chat session started at " + time.Now().String() + " local time.",
-		"The user's operating system is " + fmt.Sprintf("%s (%s)", runtime.GOOS, runtime.GOARCH) + ".",
+		"The host OS is " + fmt.Sprintf("%s (%s)", runtime.GOOS, runtime.GOARCH) + ".",
 	}
 	if runtime.GOOS == "linux" {
 		// Read /etc/os-release and look for PRETTY_NAME
 		if data, err := os.ReadFile("/etc/os-release"); err == nil {
 			for _, line := range strings.Split(string(data), "\n") {
 				if strings.HasPrefix(line, "PRETTY_NAME=") {
-					lines = append(lines, "The user's Linux distribution is "+strings.Trim(line[len("PRETTY_NAME="):], `"`)+".")
+					lines = append(lines, "The host Linux distribution is "+strings.Trim(line[len("PRETTY_NAME="):], `"`)+".")
 					break
 				}
 			}
