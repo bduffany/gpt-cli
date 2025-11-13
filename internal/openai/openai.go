@@ -16,7 +16,7 @@ import (
 
 const (
 	DefaultModel                 = "gpt-4.1"
-	DefaultVerifiedModel         = "gpt-5"
+	DefaultVerifiedModel         = "gpt-5.1"
 	DefaultThinkingModel         = "o1"
 	DefaultVerifiedThinkingModel = "o3"
 )
