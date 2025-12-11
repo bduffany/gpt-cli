@@ -29,6 +29,7 @@ var (
 	gemini   = flag.Bool("g", false, "Use Gemini (takes precedence over -model)")
 	thinking = flag.Bool("t", false, "Use a thinking model (Gemini pro or OpenAI o1/o3).")
 	five     = flag.Bool("5", false, "Shorthand for -model=gpt-5.")
+	effort   = flag.String("effort", "", "Sets the reasoning effort parameter for models that support it.")
 
 	systemPrompt = flag.String("system", "", "System prompt. Defaults to a prompt containing basic OS and session info.")
 	promptFile   = flag.String("prompt_file", "", "Load prompt from a file at this path. If unset, read from stdin.")
@@ -82,8 +83,9 @@ func run() error {
 			return printAssistantSupportedModels(ctx)
 		}
 		openAIClient := &openai.Client{
-			ModelName: *model,
-			Token:     token,
+			ModelName:       *model,
+			ReasoningEffort: *effort,
+			Token:           token,
 		}
 		if *listAllModels {
 			return printAvailableModels(ctx, openAIClient)

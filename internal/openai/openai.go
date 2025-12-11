@@ -16,9 +16,9 @@ import (
 
 const (
 	DefaultModel                 = "gpt-4.1"
-	DefaultVerifiedModel         = "gpt-5.1"
+	DefaultVerifiedModel         = "gpt-5.2"
 	DefaultThinkingModel         = "o1"
-	DefaultVerifiedThinkingModel = "o3"
+	DefaultVerifiedThinkingModel = "o3" // TODO: gpt-5.2 with high reasoning
 )
 
 func GetDefaultModel(thinking bool) string {
@@ -42,6 +42,8 @@ func GetDefaultModel(thinking bool) string {
 type Client struct {
 	ModelName string
 	Token     string
+
+	ReasoningEffort string
 }
 
 var _ llm.CompletionClient = (*Client)(nil)
@@ -51,6 +53,9 @@ func (c *Client) GetCompletion(ctx context.Context, messages []llm.Message) (*ll
 		"model":    c.ModelName,
 		"stream":   true,
 		"messages": getOpenAIMessages(messages),
+	}
+	if c.ReasoningEffort != "" {
+		payload["reasoning_effort"] = c.ReasoningEffort
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
