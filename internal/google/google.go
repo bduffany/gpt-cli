@@ -11,7 +11,7 @@ import (
 
 func GetDefaultModel(thinking bool) string {
 	if thinking {
-		return "gemini-2.5-pro"
+		return "gemini-3-pro-preview"
 	} else {
 		return "gemini-2.5-flash"
 	}
