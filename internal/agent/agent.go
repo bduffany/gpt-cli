@@ -1,4 +1,4 @@
-package auto
+package agent
 
 import (
 	"bytes"
@@ -66,7 +66,7 @@ var availableCommands = []CommandSpec{
 	},
 }
 
-//go:embed auto.md
+//go:embed agent.md
 var promptTemplate string
 
 type FixableError struct {
