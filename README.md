@@ -56,7 +56,7 @@ ffmpeg -i screenrec.mp4 -ss 00:00:10 -to 00:00:30 -c copy output.mp4
 ```
 
 The default system prompt is "You are a helpful assistant." You can
-customize it with `-system`:
+customize it with `--system`:
 
 ```
 $ gpt -system="You're a coder. No comments. No blank lines. No backticks."
@@ -74,21 +74,26 @@ function fisherYatesShuffle(array) {
 you>
 ```
 
-## Model selection
+## Model and effort selection
 
-The default model is `gpt-4o`. List available models with `-models`:
+The default model is currently `gpt-5.2`, which balances latency and
+intelligence. It defaults to `medium` effort.
 
-```
-$ gpt -models
-o3-mini
-o1
-gpt-4o
-...
-```
-
-Specify a different model with `-model`. A handy way to use this is
-with a shell alias:
+Set effort using `--effort` (or `-e` for short):
 
 ```shell
-alias o1='gpt -model=o1'
+gpt -e high # Use gpt-5.2 with high effort
+```
+
+Gemini models are also supported:
+
+```shell
+gpt --model=gemini-3-pro-preview
+```
+
+Some handy shortcuts are provided as well:
+
+```shell
+gpt -g # Use default Gemini model (currently gemini-3-flash-preview)
+gpt -t # Use OpenAI's thinking model (currently) gpt-5.2 with effort=high
 ```
