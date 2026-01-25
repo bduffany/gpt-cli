@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -18,8 +19,34 @@ const (
 	DefaultModel                 = "gpt-4.1"
 	DefaultVerifiedModel         = "gpt-5.2"
 	DefaultThinkingModel         = "o1"
-	DefaultVerifiedThinkingModel = "o3" // TODO: gpt-5.2 with high reasoning
+	DefaultVerifiedThinkingModel = "gpt-5.2?reasoning_effort=xhigh"
 )
+
+// ModelParams contains parameters parsed from a model string.
+type ModelParams struct {
+	ReasoningEffort string
+}
+
+// ParseModel parses a model string like "gpt-5.2?reasoning_effort=high"
+// and returns the model name and any parameters.
+func ParseModel(modelString string) (name string, params ModelParams) {
+	idx := strings.Index(modelString, "?")
+	if idx == -1 {
+		return modelString, ModelParams{}
+	}
+
+	name = modelString[:idx]
+	queryString := modelString[idx+1:]
+
+	values, err := url.ParseQuery(queryString)
+	if err != nil {
+		// If parsing fails, return the original string as the model name
+		return modelString, ModelParams{}
+	}
+
+	params.ReasoningEffort = values.Get("reasoning_effort")
+	return name, params
+}
 
 func GetDefaultModel(thinking bool) string {
 	verifiedEnvVar := strings.ToLower(strings.TrimSpace(os.Getenv("OPENAI_IDENTITY_VERIFIED")))
