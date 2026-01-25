@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,42 +10,53 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bduffany/gpt-cli/internal/auto"
+	"github.com/bduffany/gpt-cli/internal/agent"
 	"github.com/bduffany/gpt-cli/internal/chat"
+	"github.com/bduffany/gpt-cli/internal/flags"
 	"github.com/bduffany/gpt-cli/internal/google"
 	"github.com/bduffany/gpt-cli/internal/llm"
 	"github.com/bduffany/gpt-cli/internal/openai"
+	"github.com/bduffany/gpt-cli/internal/persona"
 	"gopkg.in/yaml.v3"
 
 	_ "embed"
 )
 
 var (
-	listModels    = flag.Bool("models", false, "List available models and exit.")
-	listAllModels = flag.Bool("all_models", false, "List ALL models and exit, even ones that aren't specified in AssistantSupportedModels.")
+	fs = flags.NewFlagSet()
 
-	model    = flag.String("model", "", "`gpt-* or gemini-*` model to use.")
-	gemini   = flag.Bool("g", false, "Use Gemini (takes precedence over -model)")
-	thinking = flag.Bool("t", false, "Use a thinking model (Gemini pro or OpenAI o1/o3).")
-	five     = flag.Bool("5", false, "Shorthand for -model=gpt-5.")
-	effort   = flag.String("effort", "", "Sets the reasoning effort parameter for models that support it.")
+	listModels    = fs.Bool("models", false, "List available models and exit.")
+	listAllModels = fs.Bool("all-models", false, "List ALL models and exit, even ones that aren't specified in AssistantSupportedModels.")
 
-	systemPrompt = flag.String("system", "", "System prompt. Defaults to a prompt containing basic OS and session info.")
-	promptFile   = flag.String("prompt_file", "", "Load prompt from a file at this path. If unset, read from stdin.")
-	interactive  = flag.Bool("interactive", false, "Start an interactive session even after loading prompt_file or reading the prompt from args. stdin must be a terminal.")
+	model    = fs.String("model", "", "gpt-* or gemini-* model to use.")
+	gemini   = fs.Bool("gemini", false, "Use Gemini (takes precedence over --model).", flags.Short("g"))
+	thinking = fs.Bool("thinking", false, "Use a thinking model (Gemini pro or OpenAI o1/o3).", flags.Short("t"))
+	five     = fs.Bool("5", false, "Shorthand for --model=gpt-5.")
+	effort   = fs.String("effort", "", "Sets the reasoning effort parameter for models that support it.", flags.Short("e"))
 
-	agentMode = flag.Bool("agent", false, "Function as a fully automated agent, with access to tools.")
+	systemPrompt = fs.String("system", "", "System prompt. Defaults to a prompt containing basic OS and session info.")
+	promptFile   = fs.String("prompt-file", "", "Load prompt from a file at this path. If unset, read from stdin.")
+	interactive  = fs.Bool("interactive", false, "Start an interactive session even after loading prompt-file or reading the prompt from args. stdin must be a terminal.", flags.Short("i"))
+
+	agentMode = fs.Bool("agent", false, "Function as a fully automated agent, with access to tools.")
+
+	personaFlag = fs.String("persona", "", "Persona name or path.", flags.Short("p"))
 )
 
 func main() {
 	if err := run(); err != nil {
+		if err == flags.ErrHelp {
+			os.Exit(0)
+		}
 		fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	flag.Parse()
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		return err
+	}
 
 	ctx := context.Background()
 
@@ -63,8 +73,24 @@ func run() error {
 		}
 	}
 
+	// Load persona: flag takes precedence, then AI_PERSONA env var
+	personaName := *personaFlag
+	personaSource := "-p/--persona flag"
+	if personaName == "" {
+		personaName = os.Getenv("AI_PERSONA")
+		personaSource = "AI_PERSONA env var"
+	}
+	personaText, err := persona.Load(personaName)
+	if err != nil {
+		return fmt.Errorf("load persona (via %s): %w", personaSource, err)
+	}
+
+	// Build system prompt
 	if *systemPrompt == "" {
 		*systemPrompt = getDefaultSystemPrompt()
+	}
+	if personaText != "" {
+		*systemPrompt = *systemPrompt + "\n\n" + personaText
 	}
 
 	if isGeminiModel(*model) {
@@ -82,9 +108,16 @@ func run() error {
 		if *listModels {
 			return printAssistantSupportedModels(ctx)
 		}
+		// Parse model string for embedded parameters (e.g., "gpt-5.2?reasoning_effort=high")
+		modelName, modelParams := openai.ParseModel(*model)
+		reasoningEffort := *effort
+		// Model string params are used as defaults; explicit flag takes precedence
+		if reasoningEffort == "" {
+			reasoningEffort = modelParams.ReasoningEffort
+		}
 		openAIClient := &openai.Client{
-			ModelName:       *model,
-			ReasoningEffort: *effort,
+			ModelName:       modelName,
+			ReasoningEffort: reasoningEffort,
 			Token:           token,
 		}
 		if *listAllModels {
@@ -109,10 +142,10 @@ func run() error {
 	}
 	c.Model = *model
 	if *agentMode {
-		return auto.Run(ctx, c)
+		return agent.Run(ctx, c)
 	}
 
-	promptFromArgs := strings.Join(flag.Args(), " ")
+	promptFromArgs := strings.Join(fs.Args(), " ")
 	if *promptFile != "" {
 		f, err := os.Open(*promptFile)
 		if err != nil {
@@ -137,6 +170,7 @@ func getDefaultSystemPrompt() string {
 		"Your underlying AI model name/version is: " + *model,
 		"The chat session started at " + time.Now().String() + " local time.",
 		"The host OS is " + fmt.Sprintf("%s (%s)", runtime.GOOS, runtime.GOARCH) + ".",
+		"The output display does NOT support markdown or MathJax rendering.",
 	}
 	if runtime.GOOS == "linux" {
 		// Read /etc/os-release and look for PRETTY_NAME
