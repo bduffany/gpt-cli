@@ -1,0 +1,13 @@
+actions:
+  - name: Test
+    triggers:
+      push:
+        branches:
+          - "main"
+      pull_request:
+        branches:
+          - "*"
+    steps:
+      - run: |
+          eval "$(tools/install_go.sh)"
+          make test

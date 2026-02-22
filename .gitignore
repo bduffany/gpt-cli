@@ -1,2 +1,3 @@
 /gpt
 *-go-tmp-umask
+.go-imported-packages
