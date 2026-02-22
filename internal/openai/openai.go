@@ -77,60 +77,29 @@ var _ llm.CompletionClient = (*Client)(nil)
 
 func (c *Client) GetCompletion(ctx context.Context, messages []llm.Message) (*llm.Completion, error) {
 	payload := map[string]any{
-		"model":    c.ModelName,
-		"stream":   true,
-		"messages": getOpenAIMessages(messages),
+		"model":  c.ModelName,
+		"stream": true,
+		"input":  getResponseInput(messages),
 	}
 	if c.ReasoningEffort != "" {
-		payload["reasoning_effort"] = c.ReasoningEffort
+		payload["reasoning"] = map[string]string{
+			"effort": c.ReasoningEffort,
+		}
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := c.Request(ctx, "POST", "/v1/chat/completions", bytes.NewReader(body))
+	rsp, err := c.Request(ctx, "POST", "/v1/responses", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	// Return a pipe reader with the parsed chat response.
+	// Return a pipe reader with the parsed streamed response text.
 	pr, pw := io.Pipe()
 	go func() (err error) {
 		defer rsp.Body.Close()
 		defer func() { pw.CloseWithError(err) }()
-
-		reply := &bytes.Buffer{}
-
-		w := io.MultiWriter(pw, reply)
-
-		scanner := bufio.NewScanner(rsp.Body)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			parts := strings.SplitN(line, ": ", 2)
-			if len(parts) < 2 {
-				continue
-			}
-			if parts[0] != "data" {
-				continue
-			}
-			if parts[1] == "[DONE]" {
-				if _, err := io.WriteString(w, "\n"); err != nil {
-					return err
-				}
-				break
-			}
-			data := &Data{}
-			if err := json.Unmarshal([]byte(parts[1]), data); err != nil {
-				return fmt.Errorf("failed to parse line %q: %s", line, err)
-			}
-			// TODO: nil checks
-			if _, err := io.WriteString(w, data.Choices[0].Delta.Content); err != nil {
-				return err
-			}
-		}
-		if scanner.Err() != nil {
-			return scanner.Err()
-		}
-		return nil
+		return writeResponseTextStream(rsp.Body, pw)
 	}()
 
 	return &llm.Completion{ReadCloser: pr}, nil
@@ -159,7 +128,6 @@ func (c *Client) Request(ctx context.Context, method, path string, body io.Reade
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.Token)
-	req.Header.Set("OpenAI-Beta", "assistants=v2")
 	rsp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -184,15 +152,47 @@ func (c *Client) Request(ctx context.Context, method, path string, body io.Reade
 	return rsp, nil
 }
 
-func getOpenAIMessages(messages []llm.Message) []Message {
-	openaiMessages := make([]Message, len(messages))
+func writeResponseTextStream(r io.Reader, w io.Writer) error {
+	scanner := bufio.NewScanner(r)
+	// Use a larger buffer for long JSON lines in SSE events.
+	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "" {
+			continue
+		}
+		if data == "[DONE]" {
+			if _, err := io.WriteString(w, "\n"); err != nil {
+				return err
+			}
+			break
+		}
+		event := &ResponseEvent{}
+		if err := json.Unmarshal([]byte(data), event); err != nil {
+			return fmt.Errorf("failed to parse response event %q: %w", line, err)
+		}
+		if event.Type == "response.output_text.delta" {
+			if _, err := io.WriteString(w, event.Delta); err != nil {
+				return err
+			}
+		}
+	}
+	return scanner.Err()
+}
+
+func getResponseInput(messages []llm.Message) []ResponseInputItem {
+	items := make([]ResponseInputItem, len(messages))
 	for i, m := range messages {
-		openaiMessages[i] = Message{
+		items[i] = ResponseInputItem{
 			Role:    convertRole(m.Metadata.Role),
 			Content: m.Payload,
 		}
 	}
-	return openaiMessages
+	return items
 }
 
 func convertRole(r llm.Role) string {
@@ -240,24 +240,16 @@ type AssistantObject struct {
 	ID string `json:"id"`
 }
 
-// Completions API definitions
+// Responses API definitions
 
-type Message struct {
-	// "system" | "user"
-	Role    string `json:"role,omitempty"`
-	Content string `json:"content,omitempty"`
+type ResponseInputItem struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
-type Data struct {
-	Choices []*Choice
-}
-
-type Choice struct {
-	Delta *Delta
-}
-
-type Delta struct {
-	Content string
+type ResponseEvent struct {
+	Type  string `json:"type"`
+	Delta string `json:"delta,omitempty"`
 }
 
 // Common API definitions
