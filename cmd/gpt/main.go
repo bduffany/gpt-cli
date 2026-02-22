@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -54,6 +56,9 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) > 1 && os.Args[1] == "personas" {
+		return runPersonasCommand(os.Args[2:])
+	}
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return err
 	}
@@ -164,6 +169,112 @@ func run() error {
 	return nil
 }
 
+func runPersonasCommand(args []string) error {
+	subcommand, dir, all, err := parsePersonasArgs(args)
+	if err != nil {
+		if err == flags.ErrHelp {
+			return err
+		}
+		return err
+	}
+
+	personas, err := collectPersonas(all)
+	if err != nil {
+		return err
+	}
+
+	switch subcommand {
+	case "json":
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(personas)
+	case "export":
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("create export dir %s: %w", dir, err)
+		}
+		for name, desc := range personas {
+			path := filepath.Join(dir, name+".txt")
+			if !strings.HasSuffix(desc, "\n") {
+				desc += "\n"
+			}
+			if err := os.WriteFile(path, []byte(desc), 0644); err != nil {
+				return fmt.Errorf("write %s: %w", path, err)
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown personas subcommand: %s", subcommand)
+	}
+}
+
+func parsePersonasArgs(args []string) (subcommand, dir string, all bool, err error) {
+	if len(args) == 0 {
+		return "json", "", false, nil
+	}
+
+	var positional []string
+	for _, arg := range args {
+		switch arg {
+		case "-a", "--all":
+			all = true
+		case "-h", "--help":
+			printPersonasUsage()
+			return "", "", false, flags.ErrHelp
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", "", false, fmt.Errorf("unknown flag: %s", arg)
+			}
+			positional = append(positional, arg)
+		}
+	}
+
+	subcommand = "json"
+	if len(positional) > 0 {
+		subcommand = positional[0]
+		positional = positional[1:]
+	}
+
+	switch subcommand {
+	case "json":
+		if len(positional) != 0 {
+			return "", "", false, fmt.Errorf("usage: gpt personas [json] [-a|--all]")
+		}
+	case "export":
+		if len(positional) != 1 {
+			return "", "", false, fmt.Errorf("usage: gpt personas export [-a|--all] <dir>")
+		}
+		dir = positional[0]
+	default:
+		return "", "", false, fmt.Errorf("unknown personas subcommand: %s", subcommand)
+	}
+
+	return subcommand, dir, all, nil
+}
+
+func printPersonasUsage() {
+	fmt.Fprintln(os.Stderr, "Usage:")
+	fmt.Fprintln(os.Stderr, "  gpt personas [json] [-a|--all]")
+	fmt.Fprintln(os.Stderr, "  gpt personas export [-a|--all] <dir>")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Options:")
+	fmt.Fprintln(os.Stderr, "  -a, --all   include user personas (overriding built-ins)")
+}
+
+func collectPersonas(includeAll bool) (map[string]string, error) {
+	personas := persona.BuiltinPersonasMap()
+	if !includeAll {
+		return personas, nil
+	}
+	userPersonas, err := persona.LoadUserPersonas()
+	if err != nil {
+		return nil, err
+	}
+	for name, desc := range userPersonas {
+		personas[name] = desc
+	}
+	return personas, nil
+}
+
 func getDefaultSystemPrompt() string {
 	lines := []string{
 		"You are a helpful AI chat assistant being accessed through a command line tool.",
@@ -171,6 +282,9 @@ func getDefaultSystemPrompt() string {
 		"The chat session started at " + time.Now().String() + " local time.",
 		"The host OS is " + fmt.Sprintf("%s (%s)", runtime.GOOS, runtime.GOARCH) + ".",
 		"The output display does NOT support markdown or MathJax rendering.",
+	}
+	if shell := os.Getenv("SHELL"); shell != "" {
+		lines = append(lines, "The user's shell is "+shell+".")
 	}
 	if runtime.GOOS == "linux" {
 		// Read /etc/os-release and look for PRETTY_NAME
